@@ -66,4 +66,4 @@ jobs:
         with:
           app-name: 'deploy-migration-web'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_2E2A80DDF8A34F3D849A50C960D85C6A }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_56738E87CEF5415C9C1FB65D56DEDA4C }}
