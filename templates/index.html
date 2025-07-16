@@ -40,10 +40,11 @@
           </form>
 
           <div id="result" style="display:none;">
-            <h2>Kết quả 📊</h2>
+            <h2>Dự báo 📊</h2>
             <p id="prediction"></p>
+            <div id="trend-text"></div>
             <h3>📚 Dữ liệu liên quan:</h3>
-            <pre id="explanation"></pre>
+            <div id="explanation"></div>
           </div>
         </div>
       </div>
@@ -379,8 +380,9 @@
         body: JSON.stringify({ province, year })
       });
       const data = await response.json();
-      document.getElementById("prediction").innerText = `Tỷ lệ di cư dự báo: ${data.prediction} ‰`;
-      document.getElementById("explanation").innerText = data.explanation;
+      document.getElementById("prediction").innerText = `Tỉ suất di cư thuần: ${data.prediction.toFixed(2)} ‰`;
+      document.getElementById("trend-text").innerHTML = data.trend_text;
+      document.getElementById("explanation").innerHTML = data.explanation;
       document.getElementById("result").style.display = "block";
     });
   </script>
