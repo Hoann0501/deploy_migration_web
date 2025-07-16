@@ -5,10 +5,7 @@ import os
 
 app = Flask(__name__)
 
-@app.before_first_request
-def load_model():
-    global model_bundle
-    model_bundle = joblib.load("migration_model_stack.pkl")
+model_bundle = joblib.load("migration_model_stack.pkl")
 
 xgb_model = model_bundle["xgb_model"]
 stack_model = model_bundle["stack_model"]
@@ -139,4 +136,5 @@ def predict_all():
     return jsonify(predictions)
 
 if __name__ == '__main__':
-   app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
+    
