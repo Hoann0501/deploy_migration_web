@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Dự báo Di cư</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin=""/>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+</head>
+<body>
+  <div class="main-container">
+    <h1>📈 Dự báo Tỷ lệ Di cư (2025–2030)</h1>
+    
+    <div class="toggle-container">
+      <button id="single-mode-btn" class="toggle-btn active">🔍 Dự đoán đơn lẻ</button>
+      <button id="map-mode-btn" class="toggle-btn">🗺️ Bản đồ tổng quan</button>
+    </div>
+
+    <div id="single-mode" class="content-wrapper">
+      <div class="left-panel">
+        <div class="form-container">
+          <form id="predict-form">
+            <label>Tỉnh/Thành phố:</label>
+            <select id="province">
+              {% for p in provinces %}
+                <option>{{ p }}</option>
+              {% endfor %}
+            </select>
+
+            <label>Năm dự đoán:</label>
+            <input type="number" id="year" min="2025" max="2030" value="2025">
+
+            <button type="submit">🔍 Dự đoán</button>
+          </form>
+
+          <div id="result" style="display:none;">
+            <h2>Kết quả 📊</h2>
+            <p id="prediction"></p>
+            <h3>📚 Dữ liệu liên quan:</h3>
+            <pre id="explanation"></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-panel">
+        <div class="map-container">
+          <h3>🗺️ Bản đồ Việt Nam</h3>
+          <div id="map"></div>
+          <p class="map-info">Chọn tỉnh/thành phố để xem vị trí trên bản đồ</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="map-mode" class="content-wrapper" style="display:none;">
+      <div class="map-controls">
+        <div class="controls-container">
+          <label>Năm dự đoán:</label>
+          <input type="number" id="map-year" min="2025" max="2030" value="2025">
+          <button id="update-map-btn">🔄 Cập nhật bản đồ</button>
+        </div>
+        <div class="legend">
+          <h3>📊 Chú thích tỷ lệ di cư (‰):</h3>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #800026;"></div>
+            <span>Di cư ra rất mạnh (&lt; -15‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #BD0026;"></div>
+            <span>Di cư ra mạnh (-15‰ đến -10‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #E31A1C;"></div>
+            <span>Di cư ra vừa (-10‰ đến -5‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #FC4E2A;"></div>
+            <span>Di cư ra nhẹ (-5‰ đến 0‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #FD8D3C;"></div>
+            <span>Cân bằng (0‰ đến 2‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #FEB24C;"></div>
+            <span>Di cư vào nhẹ (2‰ đến 5‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #FED976;"></div>
+            <span>Di cư vào vừa (5‰ đến 10‰)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #FFEDA0;"></div>
+            <span>Di cư vào mạnh (&gt; 10‰)</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="full-map-container">
+        <h3>🗺️ Bản đồ Tỷ lệ Di cư Việt Nam</h3>
+        <div id="full-map"></div>
+        <p class="map-info">Nhấp vào tỉnh/thành phố để xem thông tin chi tiết</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const map = L.map('map').setView([16.0, 106.0], 6);
+    let fullMap = null;
+    let currentPredictions = {};
+    let geojsonLayer = null;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const provinceCoords = {
+      'An Giang': [10.5216, 105.1258],
+      'Bà Rịa - Vũng Tàu': [10.5417, 107.2431],
+      'Bắc Giang': [21.2731, 106.1946],
+      'Bắc Kạn': [22.1474, 105.8348],
+      'Bạc Liêu': [9.2945, 105.7244],
+      'Bắc Ninh': [21.1864, 106.0752],
+      'Bến Tre': [10.2433, 106.3756],
+      'Bình Định': [13.7765, 109.2216],
+      'Bình Dương': [11.3254, 106.4775],
+      'Bình Phước': [11.7511, 106.7234],
+      'Bình Thuận': [11.0904, 108.0721],
+      'Cà Mau': [9.1769, 105.1524],
+      'Cần Thơ': [10.0452, 105.7469],
+      'Cao Bằng': [22.6356, 106.2550],
+      'Đà Nẵng': [16.0544, 108.2022],
+      'Đắk Lắk': [12.7100, 108.2378],
+      'Đắk Nông': [12.2646, 107.6098],
+      'Điện Biên': [21.8042, 103.2287],
+      'Đồng Nai': [11.0686, 107.1676],
+      'Đồng Tháp': [10.4938, 105.6881],
+      'Gia Lai': [13.8078, 108.1099],
+      'Hà Giang': [22.8025, 104.9784],
+      'Hà Nam': [20.5835, 105.9230],
+      'Hà Nội': [21.0285, 105.8542],
+      'Hà Tĩnh': [18.2943, 105.8906],
+      'Hải Dương': [20.9373, 106.3148],
+      'Hải Phòng': [20.8449, 106.6881],
+      'Hậu Giang': [9.7571, 105.6412],
+      'Hòa Bình': [20.6861, 105.3131],
+      'Hưng Yên': [20.6464, 106.0512],
+      'Khánh Hòa': [12.2585, 109.0526],
+      'Kiên Giang': [10.0125, 105.0811],
+      'Kon Tum': [14.3497, 108.0005],
+      'Lai Châu': [22.3686, 103.4574],
+      'Lâm Đồng': [11.5753, 108.1429],
+      'Lạng Sơn': [21.8564, 106.7610],
+      'Lào Cai': [22.4856, 103.9707],
+      'Long An': [10.6958, 106.2431],
+      'Nam Định': [20.4388, 106.1621],
+      'Nghệ An': [19.2342, 104.9200],
+      'Ninh Bình': [20.2506, 105.9744],
+      'Ninh Thuận': [11.6739, 108.8629],
+      'Phú Thọ': [21.2685, 105.2045],
+      'Phú Yên': [13.1611, 109.0899],
+      'Quảng Bình': [17.6102, 106.3487],
+      'Quảng Nam': [15.5394, 108.0191],
+      'Quảng Ngãi': [15.1214, 108.8044],
+      'Quảng Ninh': [21.0064, 107.2925],
+      'Quảng Trị': [16.7943, 106.9629],
+      'Sóc Trăng': [9.6036, 105.9802],
+      'Sơn La': [21.3256, 103.9188],
+      'Tây Ninh': [11.3350, 106.1017],
+      'Thái Bình': [20.4463, 106.3365],
+      'Thái Nguyên': [21.5613, 105.8242],
+      'Thanh Hóa': [19.8067, 105.7851],
+      'Thừa Thiên Huế': [16.4637, 107.5909],
+      'Tiền Giang': [10.4493, 106.3420],
+      'TP. Hồ Chí Minh': [10.8231, 106.6297],
+      'Trà Vinh': [9.9477, 106.3256],
+      'Tuyên Quang': [21.7767, 105.2281],
+      'Vĩnh Long': [10.2397, 105.9570],
+      'Vĩnh Phúc': [21.3608, 105.5474],
+      'Yên Bái': [21.7229, 104.8986]
+    };
+
+    let currentMarker = null;
+    let currentCircle = null;
+
+    function getColor(value) {
+      if (value < -15) return '#800026';
+      if (value < -10) return '#BD0026';
+      if (value < -5) return '#E31A1C';
+      if (value < 0) return '#FC4E2A';
+      if (value < 2) return '#FD8D3C';
+      if (value < 5) return '#FEB24C';
+      if (value < 10) return '#FED976';
+      return '#FFEDA0';
+    }
+
+    function style(feature) {
+      const provinceName = feature.properties.NAME_1;
+      const prediction = currentPredictions[provinceName] || 0;
+      return {
+        fillColor: getColor(prediction),
+        weight: 2,
+        opacity: 1,
+        color: 'white',
+        dashArray: '3',
+        fillOpacity: 0.7
+      };
+    }
+
+    function highlightFeature(e) {
+      const layer = e.target;
+      layer.setStyle({
+        weight: 5,
+        color: '#666',
+        dashArray: '',
+        fillOpacity: 0.7
+      });
+      if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+        layer.bringToFront();
+      }
+    }
+
+    function resetHighlight(e) {
+      geojsonLayer.resetStyle(e.target);
+    }
+
+    function zoomToFeature(e) {
+      fullMap.fitBounds(e.target.getBounds());
+    }
+
+    function onEachFeature(feature, layer) {
+      layer.on({
+        mouseover: highlightFeature,
+        mouseout: resetHighlight,
+        click: function(e) {
+          const provinceName = feature.properties.NAME_1;
+          const prediction = currentPredictions[provinceName] || 0;
+          const popupContent = `
+            <div style="text-align: center; font-weight: bold; min-width: 200px;">
+              <h3 style="margin: 0 0 10px 0; color: #007acc;">${provinceName}</h3>
+              <p style="margin: 5px 0; font-size: 16px;">Tỷ lệ di cư: <span style="color: ${getColor(prediction)};">${prediction.toFixed(2)}‰</span></p>
+              <p style="margin: 5px 0; color: ${getColor(prediction)}; font-weight: bold;">
+                ${prediction > 0 ? '📈 Xu hướng di cư vào' : '📉 Xu hướng di cư ra'}
+              </p>
+            </div>
+          `;
+          layer.bindPopup(popupContent).openPopup();
+        }
+      });
+    }
+
+    function initializeFullMap() {
+      if (fullMap) return;
+      
+      fullMap = L.map('full-map').setView([16.0, 106.0], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(fullMap);
+      
+      loadGeoJSONData();
+    }
+
+    async function loadGeoJSONData() {
+      try {
+        const response = await fetch('/static/vietnam-provinces.geojson');
+        const geojsonData = await response.json();
+        
+        if (geojsonLayer) {
+          fullMap.removeLayer(geojsonLayer);
+        }
+        
+        geojsonLayer = L.geoJSON(geojsonData, {
+          style: style,
+          onEachFeature: onEachFeature
+        }).addTo(fullMap);
+        
+        fullMap.fitBounds(geojsonLayer.getBounds());
+        
+      } catch (error) {
+        console.error('Error loading GeoJSON data:', error);
+      }
+    }
+
+    async function updateMapPredictions() {
+      const year = document.getElementById('map-year').value;
+      
+      try {
+        const response = await fetch('/predict_all', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year: year })
+        });
+        
+        currentPredictions = await response.json();
+        
+        if (geojsonLayer) {
+          geojsonLayer.setStyle(style);
+        }
+        
+      } catch (error) {
+        console.error('Error updating predictions:', error);
+      }
+    }
+
+    document.getElementById('single-mode-btn').addEventListener('click', function() {
+      document.getElementById('single-mode').style.display = 'flex';
+      document.getElementById('map-mode').style.display = 'none';
+      this.classList.add('active');
+      document.getElementById('map-mode-btn').classList.remove('active');
+    });
+
+    document.getElementById('map-mode-btn').addEventListener('click', function() {
+      document.getElementById('single-mode').style.display = 'none';
+      document.getElementById('map-mode').style.display = 'block';
+      this.classList.add('active');
+      document.getElementById('single-mode-btn').classList.remove('active');
+      
+      setTimeout(() => {
+        initializeFullMap();
+        updateMapPredictions();
+      }, 100);
+    });
+
+    document.getElementById('update-map-btn').addEventListener('click', updateMapPredictions);
+
+    function highlightProvince(provinceName) {
+      if (currentMarker) {
+        map.removeLayer(currentMarker);
+      }
+      if (currentCircle) {
+        map.removeLayer(currentCircle);
+      }
+
+      const coords = provinceCoords[provinceName];
+      if (coords) {
+        currentMarker = L.marker(coords)
+          .addTo(map)
+          .bindPopup(`<b>${provinceName}</b><br>Tỉnh/Thành phố được chọn`)
+          .openPopup();
+
+        currentCircle = L.circle(coords, {
+          color: '#007acc',
+          fillColor: '#007acc',
+          fillOpacity: 0.3,
+          radius: 50000
+        }).addTo(map);
+
+        map.setView(coords, 8);
+      }
+    }
+
+    document.getElementById('province').addEventListener('change', function() {
+      const selectedProvince = this.value;
+      highlightProvince(selectedProvince);
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const firstProvince = document.getElementById('province').value;
+      if (firstProvince) {
+        highlightProvince(firstProvince);
+      }
+    });
+
+    document.getElementById("predict-form").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const province = document.getElementById("province").value;
+      const year = document.getElementById("year").value;
+
+      highlightProvince(province);
+
+      const response = await fetch("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ province, year })
+      });
+      const data = await response.json();
+      document.getElementById("prediction").innerText = `Tỷ lệ di cư dự báo: ${data.prediction} ‰`;
+      document.getElementById("explanation").innerText = data.explanation;
+      document.getElementById("result").style.display = "block";
+    });
+  </script>
+</body>
+</html>
